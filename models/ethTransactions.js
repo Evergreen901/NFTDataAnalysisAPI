@@ -1,4 +1,4 @@
-const { Schema, model, models } = require("mongoose");
+const { Schema, model, models } = require('mongoose');
 
 const dataSchema = new Schema(
   {
@@ -9,11 +9,12 @@ const dataSchema = new Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-dataSchema.set("timestamps", true);
+dataSchema.set('timestamps', true);
 
-const transactions = models.ethTransactions || model("ethtransactions", dataSchema);
+const transactions =
+  models.ethtransactions || model('ethtransactions', dataSchema);
 
 module.exports = transactions;

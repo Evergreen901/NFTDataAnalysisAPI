@@ -61,7 +61,7 @@ const getActivitiesRanking = async (req, res) => {
 
     for await (const activity of activities) {
       const { seller, buyer, collectionAddress, price } = activity.data;
-      const fp = getFloorPriceFromCollectionAddress(collectionAddress);
+      const fp = getFloorPrice({ collectionAddress, from, to });
 
       if (seller) {
         sellAmountLeaderboard[seller] ??= 0;
@@ -136,7 +136,7 @@ const getProfitAndLoss = async (req, res) => {
 
     for await (const activity of activities) {
       const { seller, buyer, collectionAddress, price } = activity.data;
-      const fp = getFloorPriceFromCollectionAddress(collectionAddress);
+      const fp = getFloorPrice({ collectionAddress, from, to });
 
       pnl += seller === wallet ? price - fp : fp - price;
     }
@@ -166,9 +166,31 @@ const getPortfolioValue = async (req, res) => {
 
 const sortFunc = (a, b) => b[1] - a[1];
 
-// TODO get floor price from collection address
-const getFloorPriceFromCollectionAddress = async (collectionAddress) => {
-  return 0;
+// get floor price
+const getFloorPrice = async ({
+  collectionAddress = () => {
+    console.error('Must specify the collection address to get fp');
+    return undefined;
+  },
+  from = new Date().getTime() - 86400000,
+  to = new Date().getTime(),
+}) => {
+  const activities = await ethTransactions.aggregate([
+    {
+      $match: {
+        createdAt: {
+          $gte: ISODate(new Date(from)),
+          $lte: ISODate(new Date(to)),
+        },
+        'data.collectionAddress': collectionAddress,
+        instruction: 'Sale',
+      },
+    },
+  ]);
+
+  const fp = Math.min(...activities.map((itm) => itm.data.price ?? 0));
+
+  return fp;
 };
 
 module.exports = {
