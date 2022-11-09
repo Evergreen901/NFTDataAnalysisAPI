@@ -126,18 +126,18 @@ const getActivitiesRanking = async (req, res) => {
     let pnlLeaderboard = {};
     let fpList = {};
 
-    for await (const activity of activities) {
+    for (const activity of activities) {
       const { seller, buyer, collectionAddress, tokenAddress, price } =
         activity.data;
 
       const fp =
         fpList[collectionAddress] ??
-        getFloorPrice({
+        (await getFloorPrice({
           abbr,
           address: abbr === 'eth' ? collectionAddress : tokenAddress,
           from,
           to,
-        });
+        }));
       fpList[collectionAddress] = fp;
 
       if (seller) {
@@ -210,18 +210,18 @@ const getProfitAndLoss = async (req, res) => {
     let pnl = 0;
     let fpList = {};
 
-    for await (const activity of activities) {
+    for (const activity of activities) {
       const { seller, buyer, collectionAddress, tokenAddress, price } =
         activity.data;
 
       const fp =
         fpList[collectionAddress] ??
-        getFloorPrice({
+        (await getFloorPrice({
           abbr,
           address: abbr === 'eth' ? collectionAddress : tokenAddress,
           from,
           to,
-        });
+        }));
       fpList[collectionAddress] = fp;
 
       pnl += seller === wallet ? price - fp : fp - price;
