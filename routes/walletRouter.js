@@ -3,17 +3,27 @@ const walletController = require('../controllers/walletController');
 const walletRouter = express.Router();
 
 walletRouter
-  .route('/getMarketplaceActivities')
+  .route('/marketplaceActivities')
   .post(walletController.getMarketplaceActivities);
 
 walletRouter
-  .route('/getActivitiesRanking')
+  .route('/activitiesRanking')
   .post(walletController.getActivitiesRanking);
 
-walletRouter.route('/getProfitAndLoss').post(walletController.getProfitAndLoss);
+walletRouter.route('/profitAndLoss').post(walletController.getProfitAndLoss);
+
+walletRouter.route('/portfolioValue').post(walletController.getPortfolioValue);
 
 walletRouter
-  .route('/getPortfolioValue')
-  .post(walletController.getPortfolioValue);
+  .route('/whalesByPortfolioValue')
+  .post(walletController.getWhalesByPortfolioValue);
+
+walletRouter
+  .route('/topActiveWallets')
+  .post(walletController.getTopActiveWallets);
+
+walletRouter
+  .route('/whalesByTransactionAmount')
+  .post(walletController.getWhalesByTransactionAmount);
 
 module.exports = walletRouter;

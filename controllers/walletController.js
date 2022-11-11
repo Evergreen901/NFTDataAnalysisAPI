@@ -2,10 +2,13 @@ const PAGESIZE = 50;
 
 const sortFunc = (a, b) => b[1] - a[1];
 
-const sortAndSplice = (obj) =>
+const sortAndSplice = (obj, page) =>
   Object.entries(obj)
     .sort(sortFunc)
     .splice(page * PAGESIZE, PAGESIZE);
+
+const sortAndSlice = (obj, size) =>
+  Object.entries(obj).sort(sortFunc).slice(0, size);
 
 const getTransactions = (abbr) =>
   abbr === 'eth'
@@ -31,7 +34,7 @@ const getFloorPrice = async ({
   from = new Date().getTime() - 86400000,
   to = new Date().getTime(),
 }) => {
-  const { transactions } = getTransactions(abbr);
+  const transactions = getTransactions(abbr);
 
   const tokenCondition =
     abbr === 'eth'
@@ -42,8 +45,8 @@ const getFloorPrice = async ({
     {
       $match: {
         createdAt: {
-          $gte: ISODate(new Date(from)),
-          $lte: ISODate(new Date(to)),
+          $gte: new Date(from),
+          $lte: new Date(to),
         },
         instruction: 'Sale',
         ...tokenCondition,
@@ -51,7 +54,7 @@ const getFloorPrice = async ({
     },
   ]);
 
-  const fp = Math.min(...activities.map((itm) => itm.data.price ?? 0));
+  const fp = Math.min(...activities.map((itm) => itm.data?.price ?? 0));
 
   return fp;
 };
@@ -71,22 +74,29 @@ const getMarketplaceActivities = async (req, res) => {
       page = 0,
     } = req.body;
 
-    const { transactions } =
-      abbr === 'eth'
-        ? require('../models/ethTransactions')
-        : require('../models/solTransactions');
+    const transactions = getTransactions(abbr);
 
     const activities = await transactions.aggregate([
       {
         $match: {
           createdAt: {
-            $gte: ISODate(new Date(from)),
-            $lte: ISODate(new Date(to)),
+            $gte: new Date(from),
+            $lte: new Date(to),
           },
-          $or: [{ 'data.buyer': wallet, 'data.seller': wallet }],
+          $or: [{ 'data.buyer': wallet }, { 'data.seller': wallet }],
         },
       },
       { $sort: { createdAt: -1 } },
+      {
+        $project: {
+          _id: 0,
+          marketplace: 1,
+          signature: 1,
+          instruction: 1,
+          data: 1,
+          createdAt: 1,
+        },
+      },
       { $skip: page * PAGESIZE },
       { $limit: PAGESIZE },
     ]);
@@ -107,13 +117,14 @@ const getActivitiesRanking = async (req, res) => {
       page = 0,
     } = req.body;
 
-    const { transactions } = getTransactions(abbr);
+    const transactions = getTransactions(abbr);
+
     const activities = await transactions.aggregate([
       {
         $match: {
           createdAt: {
-            $gte: ISODate(new Date(from)),
-            $lte: ISODate(new Date(to)),
+            $gte: new Date(from),
+            $lte: new Date(to),
           },
         },
       },
@@ -127,8 +138,13 @@ const getActivitiesRanking = async (req, res) => {
     let fpList = {};
 
     for (const activity of activities) {
-      const { seller, buyer, collectionAddress, tokenAddress, price } =
-        activity.data;
+      const {
+        seller,
+        buyer,
+        collectionAddress,
+        tokenAddress,
+        price = 0,
+      } = activity.data;
 
       const fp =
         fpList[collectionAddress] ??
@@ -145,6 +161,7 @@ const getActivitiesRanking = async (req, res) => {
         sellAmountLeaderboard[seller] += price;
         sellCountLeaderboard[seller] ??= 0;
         sellCountLeaderboard[seller]++;
+        pnlLeaderboard[seller] ??= 0;
         pnlLeaderboard[seller] += price - fp;
       }
 
@@ -153,15 +170,16 @@ const getActivitiesRanking = async (req, res) => {
         buyAmountLeaderboard[buyer] += price;
         buyCountLeaderboard[buyer] ??= 0;
         buyCountLeaderboard[buyer]++;
+        pnlLeaderboard[buyer] ??= 0;
         pnlLeaderboard[buyer] += fp - price;
       }
     }
 
-    sellAmountLeaderboard = sortAndSplice(sellAmountLeaderboard);
-    sellCountLeaderboard = sortAndSplice(sellCountLeaderboard);
-    buyAmountLeaderboard = sortAndSplice(buyAmountLeaderboard);
-    buyCountLeaderboard = sortAndSplice(buyCountLeaderboard);
-    pnlLeaderboard = sortAndSplice(pnlLeaderboard);
+    sellAmountLeaderboard = sortAndSplice(sellAmountLeaderboard, page);
+    sellCountLeaderboard = sortAndSplice(sellCountLeaderboard, page);
+    buyAmountLeaderboard = sortAndSplice(buyAmountLeaderboard, page);
+    buyCountLeaderboard = sortAndSplice(buyCountLeaderboard, page);
+    pnlLeaderboard = sortAndSplice(pnlLeaderboard, page);
 
     res.status(200).json({
       sellAmountLeaderboard,
@@ -190,25 +208,25 @@ const getProfitAndLoss = async (req, res) => {
       to = new Date().getTime(),
     } = req.body;
 
-    const { transactions } = getTransactions(abbr);
+    const transactions = getTransactions(abbr);
 
     const activities = await transactions.aggregate([
       {
         $match: {
           createdAt: {
-            $gte: ISODate(new Date(from)),
-            $lte: ISODate(new Date(to)),
+            $gte: new Date(from),
+            $lte: new Date(to),
           },
-          $or: [{ 'data.buyer': wallet, 'data.seller': wallet }],
+          instruction: 'Sale',
+          $or: [{ 'data.buyer': wallet }, { 'data.seller': wallet }],
         },
       },
-      { $sort: { createdAt: -1 } },
-      { $skip: page * PAGESIZE },
-      { $limit: PAGESIZE },
     ]);
 
     let pnl = 0;
     let fpList = {};
+
+    console.log(activities);
 
     for (const activity of activities) {
       const { seller, buyer, collectionAddress, tokenAddress, price } =
@@ -254,12 +272,12 @@ const getPortfolioValue = async (req, res) => {
       year: 'numeric',
     });
 
-    const { valueSeries } = getValueSeries(abbr);
+    const valueSeries = getValueSeries(abbr);
     const values = await valueSeries.aggregate([
       {
         $match: {
           updatedAt: {
-            $lte: ISODate(new Date(to)),
+            $lte: new Date(to),
           },
           wallet,
         },
@@ -302,9 +320,132 @@ const getPortfolioValue = async (req, res) => {
   }
 };
 
+const getWhalesByPortfolioValue = async (req, res) => {
+  try {
+    const { abbr = 'eth', size } = req.body;
+
+    const valueSeries = getValueSeries(abbr);
+
+    const data = await valueSeries.aggregate([
+      { $sort: { wallet: 1, updatedAt: 1 } },
+      {
+        $group: {
+          _id: '$wallet',
+          value: { $last: '$value' },
+          lastSalesDate: { $last: '$updatedAt' },
+        },
+      },
+    ]);
+
+    res.status(200).json(data.slice(0, size ?? data.length));
+  } catch (err) {
+    console.log({ err });
+    res.send({ status: 'err', message: err });
+  }
+};
+
+const getTopActiveWallets = async (req, res) => {
+  try {
+    const {
+      abbr = 'eth',
+      from = new Date().getTime() - 86400000,
+      to = new Date().getTime(),
+      size = 10,
+    } = req.body;
+
+    const transactions = getTransactions(abbr);
+
+    const activities = await transactions.aggregate([
+      {
+        $match: {
+          instruction: 'Sale',
+          createdAt: {
+            $gte: new Date(from),
+            $lte: new Date(to),
+          },
+        },
+      },
+    ]);
+
+    let leaderboard = {};
+
+    for (const activity of activities) {
+      const { seller, buyer, price = 0 } = activity.data;
+
+      if (seller) {
+        leaderboard[seller] ??= 0;
+        leaderboard[seller]++;
+      }
+
+      if (buyer) {
+        leaderboard[buyer] ??= 0;
+        leaderboard[buyer]++;
+      }
+    }
+
+    leaderboard = sortAndSlice(leaderboard, size);
+
+    res.status(200).json({ leaderboard });
+  } catch (err) {
+    console.log({ err });
+    res.send({ status: 'err', message: err });
+  }
+};
+
+const getWhalesByTransactionAmount = async (req, res) => {
+  try {
+    const {
+      abbr = 'eth',
+      from = new Date().getTime() - 86400000,
+      to = new Date().getTime(),
+      size = 10,
+    } = req.body;
+
+    const transactions = getTransactions(abbr);
+
+    const activities = await transactions.aggregate([
+      {
+        $match: {
+          instruction: 'Sale',
+          createdAt: {
+            $gte: new Date(from),
+            $lte: new Date(to),
+          },
+        },
+      },
+    ]);
+
+    let leaderboard = {};
+
+    for (const activity of activities) {
+      const { seller, buyer, price = 0 } = activity.data;
+
+      if (seller) {
+        leaderboard[seller] ??= 0;
+        leaderboard[seller] += price;
+      }
+
+      if (buyer) {
+        leaderboard[buyer] ??= 0;
+        leaderboard[buyer] += price;
+      }
+    }
+
+    leaderboard = sortAndSlice(leaderboard, size);
+
+    res.status(200).json({ leaderboard });
+  } catch (err) {
+    console.log({ err });
+    res.send({ status: 'err', message: err });
+  }
+};
+
 module.exports = {
   getMarketplaceActivities,
   getActivitiesRanking,
   getProfitAndLoss,
   getPortfolioValue,
+  getWhalesByPortfolioValue,
+  getTopActiveWallets,
+  getWhalesByTransactionAmount,
 };
